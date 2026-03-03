@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.2.0] - 2026-03-03
+
+### Added
+
+- `withPayload(template, callback)` — framework-agnostic handler factory that resolves a template against provided values and passes the result to a callback; works with TanStack Form, React Hook Form, Formik or plain objects
+- 4 additional tests covering `withPayload` behavior: callback invocation, missing keys, real-world mutate payload, async callback
+
+### Changed
+
+- Package renamed from `@tech-sdk/resolver` to `tech-resolver`
+- `withPayload` signature updated to accept values directly `(values: V) => Promise<void>` instead of TanStack-specific `({ value: V }) => Promise<void>`, making it fully framework agnostic
+
+### Documentation
+
+- Added recommended payload file pattern (`payloads/userPayload.ts` with named exports per operation)
+- Added complex real-world example showing create with nested relations and attachments
+- README translated to French, German, Spanish, Italian, Portuguese and Chinese
+
+---
+
 ## [0.1.0] - 2026-03-03
 
 Initial release of `tech-resolver`.
