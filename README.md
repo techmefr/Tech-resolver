@@ -1,18 +1,18 @@
-# T-Resolver
+# Tech-Resolver
 
-Payload resolver for form-to-API mapping. Declare your API shape once using `t-` markers, resolve it against any form values at runtime.
+Payload resolver for form-to-API mapping. Declare your API structure once using `t-` markers and resolve it against any form values at runtime.
 
-Zero dependencies. Framework agnostic. Works with TanStack Form, React Hook Form, Formik, or plain objects.
-
-Part of the [Tech-SDK](https://github.com/techmefr/Tech-SDK) ecosystem.
+Zero dependencies. Framework agnostic. Compatible with TanStack Form, React Hook Form, Formik or plain objects.
 
 ---
 
 ## The problem
 
-Every form that talks to an API needs a mapping layer — transforming what the user typed into the JSON your backend expects. This mapping is usually written by hand, repeated across every feature, and tightly coupled to both the form library and the API shape.
+Every form that communicates with an API needs a mapping layer — transforming what the user typed into the JSON the backend expects. This mapping is usually written by hand, repeated in every feature, and tightly coupled to both the form library and the API structure.
 
-T-Resolver decouples that. You describe the target JSON once as a template. At submit time, one function call fills it in.
+When the API changes, you hunt through every form to update the payload manually.
+
+Tech-Resolver decouples all of that. You describe the target JSON once as a template. At submit time, a single function call fills it in.
 
 ---
 
@@ -24,11 +24,136 @@ pnpm add tech-resolver
 
 ---
 
-## Usage
+## Recommended pattern — payload files
 
-### Basic
+Organize your templates in dedicated files, one per resource. Copy the payload directly from your API client (Bruno, Postman, Insomnia), replace dynamic values with `t-` markers, and export one constant per operation.
 
-Define a payload template using `t-<fieldName>` markers where form values should be injected. Static values are passed through as-is.
+```
+payloads/
+  userPayload.ts
+  teamPayload.ts
+  index.ts
+```
+
+```ts
+// payloads/userPayload.ts
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+    }],
+}
+
+export const UserPayloadMutate = {
+    mutate: [{
+        operation: 'update',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+        },
+    }],
+}
+
+export const UserPayloadDelete = {
+    mutate: [{
+        operation: 'delete',
+        key: 't-id',
+    }],
+}
+```
+
+```ts
+// payloads/index.ts
+export * from './userPayload'
+export * from './teamPayload'
+```
+
+If the API changes, you update one file. Every form using that payload is updated automatically.
+
+---
+
+## Complex example — create with relations
+
+A real-world payload with nested relations, attachments and static values.
+
+**Without Tech-Resolver — rebuilt by hand in every form:**
+
+```ts
+onSubmit: async ({ value }) => {
+    await sdk.users.create({
+        mutate: [{
+            operation: 'create',
+            attributes: {
+                name: value.name,
+                email: value.email,
+                status: 'active',
+            },
+            relations: {
+                role: { operation: 'attach', key: value.roleId },
+                team: { operation: 'attach', key: value.teamId },
+                address: {
+                    operation: 'create',
+                    attributes: {
+                        street: value.street,
+                        city: value.city,
+                        country: value.country,
+                    },
+                },
+            },
+        }],
+    })
+}
+```
+
+**With Tech-Resolver — declared once, used everywhere:**
+
+```ts
+// payloads/userPayload.ts — copy from Bruno, replace values with t- markers
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+        relations: {
+            role: { operation: 'attach', key: 't-roleId' },
+            team: { operation: 'attach', key: 't-teamId' },
+            address: {
+                operation: 'create',
+                attributes: {
+                    street: 't-street',
+                    city: 't-city',
+                    country: 't-country',
+                },
+            },
+        },
+    }],
+}
+```
+
+```ts
+// In the form — that's all
+import { UserPayloadCreate } from '@/payloads'
+import { withPayload } from 'tech-resolver'
+
+const handler = withPayload(UserPayloadCreate, payload => sdk.users.create(payload))
+
+// Pass values from any source
+onSubmit: ({ value }) => handler(value)   // TanStack Form
+handleSubmit(handler)                      // React Hook Form
+onSubmit: handler                          // Formik
+handler(myValues)                          // plain object
+```
+
+---
+
+## Basic usage
 
 ```ts
 import { resolve } from 'tech-resolver'
@@ -44,13 +169,11 @@ const template = {
     }],
 }
 
-const values = {
+const payload = resolve(template, {
     first_name: 'Alice',
     email: 'alice@example.com',
     role: 3,
-}
-
-const payload = resolve(template, values)
+})
 
 // {
 //   mutate: [{
@@ -60,24 +183,11 @@ const payload = resolve(template, values)
 // }
 ```
 
-### With TanStack Form
+---
 
-```ts
-import { useForm } from '@tanstack/vue-form'
-import { resolve } from 'tech-resolver'
+## Nested objects
 
-const form = useForm({
-    defaultValues: { first_name: '', email: '', role: null },
-    onSubmit: async ({ value }) => {
-        const payload = resolve(template, value)
-        await api.post('/users', payload)
-    },
-})
-```
-
-### Nested objects
-
-The resolver walks any depth of nesting:
+The resolver traverses any depth of nesting:
 
 ```ts
 const payload = resolve(
@@ -92,14 +202,11 @@ const payload = resolve(
     },
     { name: 'Bob', email: 'bob@example.com' }
 )
-
-// {
-//   meta: { source: 'web', version: 2 },
-//   data: { profile: { full_name: 'Bob', contact: { email: 'bob@example.com' } } }
-// }
 ```
 
-### Batch operations
+---
+
+## Batch operations
 
 Arrays are resolved item by item, enabling multi-operation payloads:
 
@@ -114,21 +221,13 @@ const payload = resolve(
     },
     { name: 'Carol', role: 1, team: 4 }
 )
-
-// {
-//   mutate: [
-//     { operation: 'create', attributes: { name: 'Carol' } },
-//     { operation: 'attach', relation: 'roles', id: 1 },
-//     { operation: 'attach', relation: 'teams', id: 4 },
-//   ]
-// }
 ```
 
 ---
 
 ## Type-safe usage
 
-Use `createResolver` to bind the resolver to a specific values type. TypeScript will then validate the values object at every call site.
+Use `createResolver` to bind the resolver to a specific value type. TypeScript will validate the values object at every call site.
 
 ```ts
 import { createResolver } from 'tech-resolver'
@@ -139,7 +238,6 @@ const resolveUser = createResolver<{
     role: number
 }>()
 
-// TypeScript checks that values matches the generic type
 const payload = resolveUser(template, {
     first_name: 'Dave',
     email: 'dave@example.com',
@@ -157,12 +255,7 @@ const payload = resolveUser(template, {
 function resolve(template: JsonValue, values: IResolveValues): JsonValue
 ```
 
-Recursively walks `template` and replaces every string starting with `t-` with the matching entry from `values`. Returns `null` for missing keys. Everything else is returned as-is.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `template` | `JsonValue` | Any JSON-serializable value — string, number, boolean, null, object, array |
-| `values` | `Record<string, unknown>` | The form values to inject |
+Recursively traverses `template` and replaces every string starting with `t-` with the corresponding entry in `values`. Returns `null` for missing keys. Everything else is returned unchanged.
 
 ### `createResolver<V>()`
 
@@ -173,7 +266,18 @@ function createResolver<V extends Record<string, unknown>>(): (
 ) => JsonValue
 ```
 
-Returns a resolver function pre-typed against `V`. Use this when the same resolver is called in multiple places to avoid repeating the type annotation.
+Returns a resolver function pre-typed against `V`. Use when the same resolver is called in multiple places.
+
+### `withPayload(template, callback)`
+
+```ts
+function withPayload<V extends IResolveValues>(
+    template: JsonValue,
+    callback: (payload: JsonValue) => Promise<void> | void
+): (values: V) => Promise<void>
+```
+
+Returns a handler that resolves the template against the provided values and passes the result to the callback. Framework agnostic — works with any form library or plain values.
 
 ---
 
@@ -184,23 +288,12 @@ A marker is any string value in the template that starts with `t-`:
 ```
 "t-first_name"  →  values.first_name
 "t-role"        →  values.role
-"operation"     →  "operation"   (no prefix, returned as-is)
+"operation"     →  "operation"   (no prefix, returned unchanged)
 ```
 
-- If the key exists in `values`, its value replaces the marker — regardless of type (string, number, boolean, null, object)
-- If the key is missing from `values`, the marker resolves to `null`
-- Strings that contain `t-` but do not start with it (e.g. `"attr-name"`) are left unchanged
-
----
-
-## Project structure
-
-```
-src/
-├── resolver.ts     resolve() and createResolver()
-├── types.ts        JsonValue, IResolveValues
-└── index.ts        public exports
-```
+- If the key exists in `values`, its value replaces the marker — regardless of type
+- If the key is absent from `values`, the marker resolves to `null`
+- Strings that contain `t-` but do not start with it are left unchanged
 
 ---
 

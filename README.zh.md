@@ -1,10 +1,8 @@
-# T-Resolver
+# Tech-Resolver
 
 用于表单到 API 映射的 Payload 解析器。使用 `t-` 标记一次性声明您的 API 结构，在运行时将其解析为任意表单值。
 
 零依赖。框架无关。兼容 TanStack Form、React Hook Form、Formik 或普通对象。
-
-[Tech-SDK](https://github.com/techmefr/Tech-SDK) 生态系统的一部分。
 
 ---
 
@@ -12,7 +10,9 @@
 
 每个与 API 通信的表单都需要一个映射层——将用户输入的内容转换为后端期望的 JSON 格式。这种映射通常是手动编写的，在每个功能模块中重复出现，并与表单库和 API 结构紧密耦合。
 
-T-Resolver 将这一切解耦。您将目标 JSON 一次性描述为模板。提交时，一次函数调用即可完成填充。
+当 API 发生变化时，需要逐一检查每个表单并手动更新 payload。
+
+Tech-Resolver 将这一切解耦。您将目标 JSON 一次性描述为模板。提交时，一次函数调用即可完成填充。
 
 ---
 
@@ -24,11 +24,136 @@ pnpm add tech-resolver
 
 ---
 
-## 使用
+## 推荐模式 — payload 文件
 
-### 基础用法
+将模板组织在专用文件中，每个资源对应一个文件。直接从 API 客户端（Bruno、Postman、Insomnia）复制 payload，将动态值替换为 `t-` 标记，并为每个操作导出一个常量。
 
-使用 `t-<字段名>` 标记定义 payload 模板，标记处将被注入表单值。静态值原样传递。
+```
+payloads/
+  userPayload.ts
+  teamPayload.ts
+  index.ts
+```
+
+```ts
+// payloads/userPayload.ts
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+    }],
+}
+
+export const UserPayloadMutate = {
+    mutate: [{
+        operation: 'update',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+        },
+    }],
+}
+
+export const UserPayloadDelete = {
+    mutate: [{
+        operation: 'delete',
+        key: 't-id',
+    }],
+}
+```
+
+```ts
+// payloads/index.ts
+export * from './userPayload'
+export * from './teamPayload'
+```
+
+如果 API 发生变化，只需更新一个文件。所有使用该 payload 的表单都会自动更新。
+
+---
+
+## 复杂示例 — 带关联关系的创建操作
+
+一个包含嵌套关联、附件和静态值的真实 payload。
+
+**不使用 Tech-Resolver — 在每个表单中手动重建：**
+
+```ts
+onSubmit: async ({ value }) => {
+    await sdk.users.create({
+        mutate: [{
+            operation: 'create',
+            attributes: {
+                name: value.name,
+                email: value.email,
+                status: 'active',
+            },
+            relations: {
+                role: { operation: 'attach', key: value.roleId },
+                team: { operation: 'attach', key: value.teamId },
+                address: {
+                    operation: 'create',
+                    attributes: {
+                        street: value.street,
+                        city: value.city,
+                        country: value.country,
+                    },
+                },
+            },
+        }],
+    })
+}
+```
+
+**使用 Tech-Resolver — 声明一次，到处使用：**
+
+```ts
+// payloads/userPayload.ts — 从 Bruno 复制，值替换为 t- 标记
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+        relations: {
+            role: { operation: 'attach', key: 't-roleId' },
+            team: { operation: 'attach', key: 't-teamId' },
+            address: {
+                operation: 'create',
+                attributes: {
+                    street: 't-street',
+                    city: 't-city',
+                    country: 't-country',
+                },
+            },
+        },
+    }],
+}
+```
+
+```ts
+// 在表单中 — 就这些
+import { UserPayloadCreate } from '@/payloads'
+import { withPayload } from 'tech-resolver'
+
+const handler = withPayload(UserPayloadCreate, payload => sdk.users.create(payload))
+
+// 从任意来源传入值
+onSubmit: ({ value }) => handler(value)   // TanStack Form
+handleSubmit(handler)                      // React Hook Form
+onSubmit: handler                          // Formik
+handler(myValues)                          // 普通对象
+```
+
+---
+
+## 基础用法
 
 ```ts
 import { resolve } from 'tech-resolver'
@@ -44,13 +169,11 @@ const template = {
     }],
 }
 
-const values = {
+const payload = resolve(template, {
     first_name: 'Alice',
     email: 'alice@example.com',
     role: 3,
-}
-
-const payload = resolve(template, values)
+})
 
 // {
 //   mutate: [{
@@ -60,22 +183,9 @@ const payload = resolve(template, values)
 // }
 ```
 
-### 与 TanStack Form 配合使用
+---
 
-```ts
-import { useForm } from '@tanstack/vue-form'
-import { resolve } from 'tech-resolver'
-
-const form = useForm({
-    defaultValues: { first_name: '', email: '', role: null },
-    onSubmit: async ({ value }) => {
-        const payload = resolve(template, value)
-        await api.post('/users', payload)
-    },
-})
-```
-
-### 嵌套对象
+## 嵌套对象
 
 解析器可遍历任意深度的嵌套结构：
 
@@ -94,7 +204,9 @@ const payload = resolve(
 )
 ```
 
-### 批量操作
+---
+
+## 批量操作
 
 数组按元素逐一解析，支持多操作 payload：
 
@@ -155,6 +267,17 @@ function createResolver<V extends Record<string, unknown>>(): (
 ```
 
 返回一个预先绑定到 `V` 类型的解析器函数。当同一解析器在多处调用时使用此方式。
+
+### `withPayload(template, callback)`
+
+```ts
+function withPayload<V extends IResolveValues>(
+    template: JsonValue,
+    callback: (payload: JsonValue) => Promise<void> | void
+): (values: V) => Promise<void>
+```
+
+返回一个 handler，将模板解析为提供的值并将结果传递给 callback。框架无关——适用于任何表单库或普通值。
 
 ---
 

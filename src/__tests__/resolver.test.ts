@@ -146,7 +146,7 @@ describe('withPayload', () => {
         const template = { attributes: { name: 't-name' } }
         const handler = withPayload(template, callback)
 
-        await handler({ value: { name: 'Alice' } })
+        await handler({ name: 'Alice' })
 
         expect(callback).toHaveBeenCalledWith({ attributes: { name: 'Alice' } })
     })
@@ -155,7 +155,7 @@ describe('withPayload', () => {
         const callback = vi.fn()
         const handler = withPayload({ id: 't-id' }, callback)
 
-        await handler({ value: {} })
+        await handler({})
 
         expect(callback).toHaveBeenCalledWith({ id: null })
     })
@@ -167,7 +167,7 @@ describe('withPayload', () => {
         }
         const handler = withPayload(template, callback)
 
-        await handler({ value: { name: 'Bob', role: 2 } })
+        await handler({ name: 'Bob', role: 2 })
 
         expect(callback).toHaveBeenCalledWith({
             mutate: [{ operation: 'create', attributes: { name: 'Bob', role_id: 2 } }],
@@ -181,7 +181,7 @@ describe('withPayload', () => {
             results.push(payload as string)
         })
 
-        await handler({ value: { name: 'Carol' } })
+        await handler({ name: 'Carol' })
 
         expect(results).toEqual(['Carol'])
     })

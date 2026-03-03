@@ -1,10 +1,8 @@
-# T-Resolver
+# Tech-Resolver
 
 Resolver di payload per il mapping da form ad API. Dichiara la struttura della tua API una sola volta usando marcatori `t-` e risolvila contro qualsiasi valore del form a runtime.
 
 Nessuna dipendenza. Agnostico al framework. Compatibile con TanStack Form, React Hook Form, Formik o oggetti semplici.
-
-Parte dell'ecosistema [Tech-SDK](https://github.com/techmefr/Tech-SDK).
 
 ---
 
@@ -12,7 +10,9 @@ Parte dell'ecosistema [Tech-SDK](https://github.com/techmefr/Tech-SDK).
 
 Ogni form che comunica con un'API necessita di uno strato di mapping — trasformare ciò che l'utente ha inserito nel JSON atteso dal backend. Questo mapping viene solitamente scritto a mano, ripetuto in ogni funzionalità e fortemente accoppiato sia alla libreria di form che alla struttura dell'API.
 
-T-Resolver disaccoppia tutto questo. Descrivi il JSON di destinazione una volta sola come template. Al momento dell'invio, una singola chiamata a funzione lo popola.
+Quando l'API cambia, bisogna cercare in ogni form per aggiornare il payload manualmente.
+
+Tech-Resolver disaccoppia tutto questo. Descrivi il JSON di destinazione una volta sola come template. Al momento dell'invio, una singola chiamata a funzione lo popola.
 
 ---
 
@@ -24,11 +24,136 @@ pnpm add tech-resolver
 
 ---
 
-## Utilizzo
+## Pattern consigliato — file di payload
 
-### Base
+Organizza i tuoi template in file dedicati, uno per risorsa. Copia il payload direttamente dal tuo client API (Bruno, Postman, Insomnia), sostituisci i valori dinamici con marcatori `t-` ed esporta una costante per operazione.
 
-Definisci un template di payload usando marcatori `t-<nomeCampo>` dove devono essere iniettati i valori del form. I valori statici vengono passati invariati.
+```
+payloads/
+  userPayload.ts
+  teamPayload.ts
+  index.ts
+```
+
+```ts
+// payloads/userPayload.ts
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+    }],
+}
+
+export const UserPayloadMutate = {
+    mutate: [{
+        operation: 'update',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+        },
+    }],
+}
+
+export const UserPayloadDelete = {
+    mutate: [{
+        operation: 'delete',
+        key: 't-id',
+    }],
+}
+```
+
+```ts
+// payloads/index.ts
+export * from './userPayload'
+export * from './teamPayload'
+```
+
+Se l'API cambia, aggiorni un solo file. Ogni form che usa quel payload viene aggiornato automaticamente.
+
+---
+
+## Esempio complesso — creazione con relazioni
+
+Un payload reale con relazioni annidate, allegati e valori statici.
+
+**Senza Tech-Resolver — ricostruito a mano in ogni form:**
+
+```ts
+onSubmit: async ({ value }) => {
+    await sdk.users.create({
+        mutate: [{
+            operation: 'create',
+            attributes: {
+                name: value.name,
+                email: value.email,
+                status: 'active',
+            },
+            relations: {
+                role: { operation: 'attach', key: value.roleId },
+                team: { operation: 'attach', key: value.teamId },
+                address: {
+                    operation: 'create',
+                    attributes: {
+                        street: value.street,
+                        city: value.city,
+                        country: value.country,
+                    },
+                },
+            },
+        }],
+    })
+}
+```
+
+**Con Tech-Resolver — dichiarato una volta, usato ovunque:**
+
+```ts
+// payloads/userPayload.ts — copiato da Bruno, valori sostituiti con marcatori t-
+export const UserPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: {
+            name: 't-name',
+            email: 't-email',
+            status: 'active',
+        },
+        relations: {
+            role: { operation: 'attach', key: 't-roleId' },
+            team: { operation: 'attach', key: 't-teamId' },
+            address: {
+                operation: 'create',
+                attributes: {
+                    street: 't-street',
+                    city: 't-city',
+                    country: 't-country',
+                },
+            },
+        },
+    }],
+}
+```
+
+```ts
+// Nel form — è tutto
+import { UserPayloadCreate } from '@/payloads'
+import { withPayload } from 'tech-resolver'
+
+const handler = withPayload(UserPayloadCreate, payload => sdk.users.create(payload))
+
+// Passa i valori da qualsiasi sorgente
+onSubmit: ({ value }) => handler(value)   // TanStack Form
+handleSubmit(handler)                      // React Hook Form
+onSubmit: handler                          // Formik
+handler(myValues)                          // oggetto semplice
+```
+
+---
+
+## Utilizzo base
 
 ```ts
 import { resolve } from 'tech-resolver'
@@ -44,13 +169,11 @@ const template = {
     }],
 }
 
-const values = {
+const payload = resolve(template, {
     first_name: 'Alice',
     email: 'alice@example.com',
     role: 3,
-}
-
-const payload = resolve(template, values)
+})
 
 // {
 //   mutate: [{
@@ -60,22 +183,9 @@ const payload = resolve(template, values)
 // }
 ```
 
-### Con TanStack Form
+---
 
-```ts
-import { useForm } from '@tanstack/vue-form'
-import { resolve } from 'tech-resolver'
-
-const form = useForm({
-    defaultValues: { first_name: '', email: '', role: null },
-    onSubmit: async ({ value }) => {
-        const payload = resolve(template, value)
-        await api.post('/users', payload)
-    },
-})
-```
-
-### Oggetti annidati
+## Oggetti annidati
 
 Il resolver percorre qualsiasi livello di annidamento:
 
@@ -94,7 +204,9 @@ const payload = resolve(
 )
 ```
 
-### Operazioni in batch
+---
+
+## Operazioni in batch
 
 Gli array vengono risolti elemento per elemento, abilitando payload con operazioni multiple:
 
@@ -155,6 +267,17 @@ function createResolver<V extends Record<string, unknown>>(): (
 ```
 
 Restituisce una funzione resolver pre-tipizzata su `V`. Usala quando lo stesso resolver viene chiamato in più punti.
+
+### `withPayload(template, callback)`
+
+```ts
+function withPayload<V extends IResolveValues>(
+    template: JsonValue,
+    callback: (payload: JsonValue) => Promise<void> | void
+): (values: V) => Promise<void>
+```
+
+Restituisce un handler che risolve il template contro i valori forniti e passa il risultato al callback. Agnostico al framework — funziona con qualsiasi libreria di form o valori semplici.
 
 ---
 

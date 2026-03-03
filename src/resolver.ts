@@ -32,8 +32,8 @@ export function createResolver<V extends IResolveValues>(): (
 export function withPayload<V extends IResolveValues>(
     template: JsonValue,
     callback: (payload: JsonValue) => Promise<void> | void
-): (ctx: { value: V }) => Promise<void> {
-    return async ({ value }) => {
-        await callback(resolve(template, value))
+): (values: V) => Promise<void> {
+    return async (values) => {
+        await callback(resolve(template, values))
     }
 }
