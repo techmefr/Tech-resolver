@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { resolve, createResolver } from '../resolver'
+import { describe, it, expect, vi } from 'vitest'
+import { resolve, createResolver, withPayload } from '../resolver'
 
 describe('resolve', () => {
     describe('primitives', () => {
@@ -137,6 +137,53 @@ describe('resolve', () => {
             )
             expect(result).toEqual({ meta: { source: 'web', version: 2, user: 99 } })
         })
+    })
+})
+
+describe('withPayload', () => {
+    it('calls the callback with the resolved payload', async () => {
+        const callback = vi.fn()
+        const template = { attributes: { name: 't-name' } }
+        const handler = withPayload(template, callback)
+
+        await handler({ value: { name: 'Alice' } })
+
+        expect(callback).toHaveBeenCalledWith({ attributes: { name: 'Alice' } })
+    })
+
+    it('returns null for missing keys', async () => {
+        const callback = vi.fn()
+        const handler = withPayload({ id: 't-id' }, callback)
+
+        await handler({ value: {} })
+
+        expect(callback).toHaveBeenCalledWith({ id: null })
+    })
+
+    it('passes a real-world mutate payload to the callback', async () => {
+        const callback = vi.fn()
+        const template = {
+            mutate: [{ operation: 'create', attributes: { name: 't-name', role_id: 't-role' } }],
+        }
+        const handler = withPayload(template, callback)
+
+        await handler({ value: { name: 'Bob', role: 2 } })
+
+        expect(callback).toHaveBeenCalledWith({
+            mutate: [{ operation: 'create', attributes: { name: 'Bob', role_id: 2 } }],
+        })
+    })
+
+    it('awaits an async callback', async () => {
+        const results: string[] = []
+        const handler = withPayload('t-name', async (payload) => {
+            await Promise.resolve()
+            results.push(payload as string)
+        })
+
+        await handler({ value: { name: 'Carol' } })
+
+        expect(results).toEqual(['Carol'])
     })
 })
 
