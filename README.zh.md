@@ -19,7 +19,7 @@ T-Resolver 将这一切解耦。您将目标 JSON 一次性描述为模板。提
 ## 安装
 
 ```bash
-pnpm add @tech-sdk/resolver
+pnpm add tech-resolver
 ```
 
 ---
@@ -31,7 +31,7 @@ pnpm add @tech-sdk/resolver
 使用 `t-<字段名>` 标记定义 payload 模板，标记处将被注入表单值。静态值原样传递。
 
 ```ts
-import { resolve } from '@tech-sdk/resolver'
+import { resolve } from 'tech-resolver'
 
 const template = {
     mutate: [{
@@ -64,7 +64,7 @@ const payload = resolve(template, values)
 
 ```ts
 import { useForm } from '@tanstack/vue-form'
-import { resolve } from '@tech-sdk/resolver'
+import { resolve } from 'tech-resolver'
 
 const form = useForm({
     defaultValues: { first_name: '', email: '', role: null },
@@ -118,7 +118,7 @@ const payload = resolve(
 使用 `createResolver` 将解析器绑定到特定的值类型。TypeScript 将在每个调用处验证 values 对象。
 
 ```ts
-import { createResolver } from '@tech-sdk/resolver'
+import { createResolver } from 'tech-resolver'
 
 const resolveUser = createResolver<{
     first_name: string

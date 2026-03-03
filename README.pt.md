@@ -19,7 +19,7 @@ T-Resolver desacopla tudo isso. Você descreve o JSON de destino uma única vez 
 ## Instalação
 
 ```bash
-pnpm add @tech-sdk/resolver
+pnpm add tech-resolver
 ```
 
 ---
@@ -31,7 +31,7 @@ pnpm add @tech-sdk/resolver
 Defina um template de payload usando marcadores `t-<nomeDoCampo>` onde os valores do formulário devem ser injetados. Valores estáticos são passados sem alteração.
 
 ```ts
-import { resolve } from '@tech-sdk/resolver'
+import { resolve } from 'tech-resolver'
 
 const template = {
     mutate: [{
@@ -64,7 +64,7 @@ const payload = resolve(template, values)
 
 ```ts
 import { useForm } from '@tanstack/vue-form'
-import { resolve } from '@tech-sdk/resolver'
+import { resolve } from 'tech-resolver'
 
 const form = useForm({
     defaultValues: { first_name: '', email: '', role: null },
@@ -118,7 +118,7 @@ const payload = resolve(
 Use `createResolver` para vincular o resolver a um tipo específico de valores. O TypeScript validará o objeto values em cada ponto de chamada.
 
 ```ts
-import { createResolver } from '@tech-sdk/resolver'
+import { createResolver } from 'tech-resolver'
 
 const resolveUser = createResolver<{
     first_name: string
