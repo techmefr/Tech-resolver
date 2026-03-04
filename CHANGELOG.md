@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.3.0] - 2026-03-04
+
+### Documentation
+
+- Added "Create vs Update" section — two templates per resource pattern with `isEditing` conditional
+- Added "Relations in edit mode" section — `buildRelationOps(current, initial)` utility pattern for attach/detach logic in edit mode, with test examples
+- Added "Scope of `resolve`" table — explicit boundary between what `resolve` handles and what belongs in the application layer
+- All 6 translations updated (French, German, Spanish, Italian, Portuguese, Chinese)
+
+---
+
 ## [0.2.0] - 2026-03-03
 
 ### Added
