@@ -153,6 +153,106 @@ handler(myValues)                          // 普通对象
 
 ---
 
+## Create vs Update — 每个资源两个模板
+
+创建和更新 payload 的结构形式不同。在同一文件中声明两者：
+
+```ts
+// payloads/upsPayload.ts
+export const UpsPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: { name: 't-name', serial_number: 't-serial' },
+        relations: {
+            ups: { operation: 'create', attributes: { power_in_kw: 't-power_in_kw' } },
+            type: { operation: 'attach', key: 't-type_id' },
+        },
+    }],
+}
+
+export const UpsPayloadUpdate = {
+    mutate: [{
+        operation: 'update',
+        key: 't-id',
+        attributes: { name: 't-name', serial_number: 't-serial' },
+        relations: {
+            ups: { operation: 'update', key: 't-ups_id', attributes: { power_in_kw: 't-power_in_kw' } },
+        },
+    }],
+}
+```
+
+在表单中，根据当前模式选择模板：
+
+```ts
+const template = isEditing ? UpsPayloadUpdate : UpsPayloadCreate
+
+onSubmit: ({ value }) => withPayload(template, payload => sdk.ups.mutate(payload))(value)
+```
+
+---
+
+## 编辑模式下的关联关系 — attach/detach
+
+`resolve` 处理静态 payload 结构。在编辑时，修改关联关系需要先解除旧值再附加新值。这段差异逻辑作为纯工具函数存放在应用层中：
+
+```ts
+// utils/relationOps.ts
+export function buildRelationOps(
+    current: number | null,
+    initial: number | null,
+): Array<{ operation: string; key: number }> {
+    if (current === initial) return []
+    const ops: Array<{ operation: string; key: number }> = []
+    if (initial !== null) ops.push({ operation: 'detach', key: initial })
+    if (current !== null) ops.push({ operation: 'attach', key: current })
+    return ops
+}
+```
+
+在提交时与 `resolve` 配合使用：
+
+```ts
+onSubmit: async ({ value }) => {
+    const payload = resolve(UpsPayloadUpdate, value) as any
+    payload.mutate[0].relations.type = buildRelationOps(value.type_id, initialValues.type_id)
+    await sdk.ups.mutate(payload.mutate)
+}
+```
+
+`resolve` 和 `buildRelationOps` 都是纯函数——无共享状态，可独立测试。
+
+```ts
+// test — 无 store，无 mock，无 context
+it('generates detach + attach when relation changes', () => {
+    expect(buildRelationOps(7, 5)).toEqual([
+        { operation: 'detach', key: 5 },
+        { operation: 'attach', key: 7 },
+    ])
+})
+
+it('returns empty array when relation is unchanged', () => {
+    expect(buildRelationOps(5, 5)).toEqual([])
+})
+```
+
+---
+
+## `resolve` 的职责范围
+
+| 场景 | 由 `resolve` 处理 | 由其他地方处理 |
+|---|---|---|
+| 静态 payload 结构 | ✅ | |
+| 属性字段（创建 + 更新） | ✅ | |
+| 创建时的嵌套关联 | ✅ | |
+| 编辑时的 attach/detach | | 应用中的 `buildRelationOps` |
+| 数组关联的差异计算 | | 应用中的 diff 工具函数 |
+| 条件关联（null 检查） | | 提交 handler 中的条件判断 |
+
+`resolve` 负责结构部分。动态关联逻辑作为纯粹的、可测试的工具函数保留在应用层中。
+
+---
+
 ## 基础用法
 
 ```ts

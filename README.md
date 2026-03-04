@@ -153,6 +153,106 @@ handler(myValues)                          // plain object
 
 ---
 
+## Create vs Update — two templates per resource
+
+Create and update payloads have structurally different shapes. Declare both in the same file:
+
+```ts
+// payloads/upsPayload.ts
+export const UpsPayloadCreate = {
+    mutate: [{
+        operation: 'create',
+        attributes: { name: 't-name', serial_number: 't-serial' },
+        relations: {
+            ups: { operation: 'create', attributes: { power_in_kw: 't-power_in_kw' } },
+            type: { operation: 'attach', key: 't-type_id' },
+        },
+    }],
+}
+
+export const UpsPayloadUpdate = {
+    mutate: [{
+        operation: 'update',
+        key: 't-id',
+        attributes: { name: 't-name', serial_number: 't-serial' },
+        relations: {
+            ups: { operation: 'update', key: 't-ups_id', attributes: { power_in_kw: 't-power_in_kw' } },
+        },
+    }],
+}
+```
+
+In the form, pick the template based on the current mode:
+
+```ts
+const template = isEditing ? UpsPayloadUpdate : UpsPayloadCreate
+
+onSubmit: ({ value }) => withPayload(template, payload => sdk.ups.mutate(payload))(value)
+```
+
+---
+
+## Relations in edit mode — attach/detach
+
+`resolve` handles static payload shapes. When editing, changing a relation requires detaching the old value and attaching the new one. This diff logic lives in your app as a pure utility:
+
+```ts
+// utils/relationOps.ts
+export function buildRelationOps(
+    current: number | null,
+    initial: number | null,
+): Array<{ operation: string; key: number }> {
+    if (current === initial) return []
+    const ops: Array<{ operation: string; key: number }> = []
+    if (initial !== null) ops.push({ operation: 'detach', key: initial })
+    if (current !== null) ops.push({ operation: 'attach', key: current })
+    return ops
+}
+```
+
+Use it alongside `resolve` at submit time:
+
+```ts
+onSubmit: async ({ value }) => {
+    const payload = resolve(UpsPayloadUpdate, value) as any
+    payload.mutate[0].relations.type = buildRelationOps(value.type_id, initialValues.type_id)
+    await sdk.ups.mutate(payload.mutate)
+}
+```
+
+Both `resolve` and `buildRelationOps` are pure functions — no shared state, trivial to test independently.
+
+```ts
+// test — no store, no mock, no context
+it('generates detach + attach when relation changes', () => {
+    expect(buildRelationOps(7, 5)).toEqual([
+        { operation: 'detach', key: 5 },
+        { operation: 'attach', key: 7 },
+    ])
+})
+
+it('returns empty array when relation is unchanged', () => {
+    expect(buildRelationOps(5, 5)).toEqual([])
+})
+```
+
+---
+
+## Scope of `resolve`
+
+| Case | Handled by `resolve` | Handled elsewhere |
+|---|---|---|
+| Static payload structure | ✅ | |
+| Attribute fields (create + update) | ✅ | |
+| Nested relations on create | ✅ | |
+| Attach/detach on edit | | `buildRelationOps` in app |
+| Array relation diffs | | diff utility in app |
+| Conditional relations (null check) | | conditional in submit handler |
+
+`resolve` covers the structural part. Dynamic relational logic stays in the application layer as pure, testable utilities.
+
+---
+
 ## Basic usage
 
 ```ts
